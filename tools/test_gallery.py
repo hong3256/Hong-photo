@@ -81,6 +81,8 @@ COLORS = [(163, 76, 40), (32, 71, 61), (46, 84, 122), (116, 86, 52),
 
 
 class Mock:
+    img_calls = 0
+
     def __init__(self, photos, albums, locked=False):
         self.photos = photos
         self.albums = albums
@@ -155,6 +157,7 @@ class Mock:
                          "albums": [{"name": k, "count": v} for k, v in sorted(albums.items())],
                          "total": len(self.photos), "locked": self.locked})
         if action == "img":
+            Mock.img_calls += 1
             if self.locked and q.get("token") != "tok.abc":
                 return send({"ok": False, "error": "LOCKED"})
             pid = q.get("id")
@@ -410,6 +413,29 @@ def main():
             check("오류 상태 문구", "불러오지 못했어요" in page.inner_text("#stateTitle"), page.inner_text("#stateTitle"))
             check("오류 상태에 다시 시도", page.is_visible("#stRetry"))
             check("오류 상태 상단 안내", "불러오지 못했어요" in page.inner_text("#subTitle"), page.inner_text("#subTitle"))
+            ctx.close()
+
+            # ── 6. 많은 사진(120장) — 지연 로딩 ──
+            print("[6] 사진 120장 — 지연 로딩")
+            many = []
+            for i in range(120):
+                many.append({"id": "M%d" % i, "name": "photo_%03d.jpg" % i, "album": "앨범%d" % (i % 4),
+                             "date": "2026-%02d-%02dT10:00:00" % (1 + i % 12, 1 + i % 28),
+                             "dateLabel": "2026.%02d.%02d" % (1 + i % 12, 1 + i % 28),
+                             "mimeType": "image/jpeg", "size": 2048})
+            mock6 = Mock(many, album_counts(many))
+            Mock.img_calls = 0
+            ctx, page, errors, page_errors, failed = new_page(browser, mock6, mobile=True)
+            page.wait_for_function("() => document.querySelectorAll('#gallery .card').length === 120")
+            page.wait_for_timeout(900)
+            early = Mock.img_calls
+            check("처음엔 화면 근처만 받음", 0 < early <= 30, early)
+            page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(1200)
+            check("스크롤하면 더 받음", Mock.img_calls > early, (early, Mock.img_calls))
+            last_ready = page.eval_on_selector_all("#gallery .card:last-child img.ready", "e => e.length")
+            check("마지막 카드도 그림", last_ready == 1, last_ready)
+            check("120장 콘솔 오류 0", len(errors) == 0, errors[:3])
             ctx.close()
 
             browser.close()
