@@ -89,7 +89,7 @@ HARNESS = r"""
   addFile('F4', 'IMG_0004.jpg', 'image/jpeg', albumA, '2026-11-15T21:10:00Z', 70, mkBytes(70, 4));
   addFile('F5', 'doc.pdf', 'application/pdf', root, '2026-11-21T09:00:00Z', 30);
   addFile('F6', 'private.jpg', 'image/jpeg', outside, '2026-11-23T09:00:00Z', 50, mkBytes(50, 6));
-  addFile('F7', 'BIG.jpg', 'image/jpeg', root, '2026-11-10T09:00:00Z', 20 * 1024 * 1024, mkBytes(10, 7));
+  addFile('F7', 'BIG.jpg', 'image/jpeg', root, '2026-11-10T09:00:00Z', 30 * 1024 * 1024, mkBytes(10, 7));
 
   /* ── 가짜 구글 서비스 ── */
   const DriveApp = {
@@ -283,7 +283,7 @@ def main():
         check("img 썸네일: 썸네일 바이트", t.get("ok") and t["data"].split(",")[1] == B["thumb"], {k: t.get(k) for k in ("ok", "error")})
         fb = R["imgThumbFallback"]
         check("img 썸네일 실패 시 원본 대체", fb.get("ok") and fb["data"].split(",")[1] == B["f1"], {k: fb.get(k) for k in ("ok", "error")})
-        check("img 큰 원본+썸네일 실패 → TOO_LARGE", R["imgBigTooLarge"].get("error") == "TOO_LARGE", R["imgBigTooLarge"])
+        check("img 25MB 초과+썸네일 실패 → TOO_LARGE", R["imgBigTooLarge"].get("error") == "TOO_LARGE", R["imgBigTooLarge"])
         big = R["imgBigResized"]
         check("img 큰 원본 → 축소본(resized)", big.get("ok") and big.get("resized") is True, {k: big.get(k) for k in ("ok", "error", "resized")})
 
