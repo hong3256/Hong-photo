@@ -3,7 +3,7 @@
    · 아이콘·매니페스트는 stale-while-revalidate.
    · 구글 드라이브(Apps Script) 응답은 캐시하지 않음 — 항상 최신 사진 목록을 쓴다.
 */
-var CACHE = 'hong-photo-v2';
+var CACHE = 'hong-photo-v3';
 var SHELL = new URL('./index.html', self.location.href).href;
 var CORE = [
   './',
