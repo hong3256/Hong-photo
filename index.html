@@ -957,6 +957,7 @@ function deleteCurrent() {
       if (a.name !== p.album) return a;
       return { name: a.name, count: a.count - 1 };
     }).filter(function (a) { return a.count > 0; });
+    if (S.album && !S.albums.some(function (a) { return a.name === S.album; })) S.album = '';
     LB.list = filtered();
     thumbCache.delete(p.id);
     fullCache.delete(p.id);
