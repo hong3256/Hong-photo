@@ -3,7 +3,7 @@
 
 실제 드라이브·스크립트 없이, script.google.com 요청을 가로채 가짜 응답을 준다.
 확인: 빈 상태 · 연결 모달 · 그리드/앨범/검색/정렬 · 라이트박스(이전·다음·키보드·다운로드)
-      · 관리자 PIN · 업로드 · 삭제 · 열람 잠금 · 콘솔 오류 0건
+      · 관리자 PIN · 업로드 · 삭제 · 열람 잠금 · 사진 댓글(배지·조회·작성·삭제·XSS·구형 스크립트) · 콘솔 오류 0건
 """
 import base64
 import io
@@ -83,13 +83,18 @@ COLORS = [(163, 76, 40), (32, 71, 61), (46, 84, 122), (116, 86, 52),
 class Mock:
     img_calls = 0
 
-    def __init__(self, photos, albums, locked=False):
+    def __init__(self, photos, albums, locked=False, old_script=False):
         self.photos = photos
         self.albums = albums
         self.locked = locked
+        self.old_script = old_script
         self.uploaded = []
         self.deleted = []
+        self.comments = {}
+        self.comments_added = []
+        self.deleted_comments = []
         self.seq = 0
+        self.cm_seq = 0
         self.images = {}
         for i, p in enumerate(photos):
             self.images[p["id"]] = png_data_uri(p["name"], COLORS[i % len(COLORS)])
@@ -136,6 +141,35 @@ class Mock:
                 self.photos = [p for p in self.photos if p["id"] != pid]
                 self.deleted.append(pid)
                 return send({"ok": True, "id": pid, "trashed": True})
+            if action == "addComment":
+                if self.old_script:
+                    return send({"ok": False, "error": "BAD_REQUEST", "message": "알 수 없는 요청입니다: addComment"})
+                pid = body.get("photoId")
+                if not any(p["id"] == pid for p in self.photos):
+                    return send({"ok": False, "error": "NOT_FOUND", "message": "사진을 찾을 수 없습니다."})
+                text = str(body.get("text") or "").strip()
+                if not text:
+                    return send({"ok": False, "error": "BAD_REQUEST", "message": "댓글 내용을 입력해 주세요."})
+                author = str(body.get("author") or "").strip() or "익명"
+                self.cm_seq += 1
+                row = {"id": "C%d" % self.cm_seq, "author": author, "text": text,
+                       "createdAt": "2026-11-24T13:30:00", "dateLabel": "2026.11.24 13:%02d" % (self.cm_seq % 60)}
+                self.comments.setdefault(pid, []).append(row)
+                self.comments_added.append(body)
+                lst = self.comments[pid]
+                return send({"ok": True, "photoId": pid, "comment": row, "comments": lst, "commentCount": len(lst)})
+            if action == "deleteComment":
+                if str(body.get("pin")) != "2580":
+                    return send({"ok": False, "error": "BAD_PIN", "message": "관리자 PIN이 맞지 않습니다."})
+                pid = body.get("photoId")
+                cid = body.get("commentId")
+                lst = self.comments.get(pid, [])
+                if not any(c["id"] == cid for c in lst):
+                    return send({"ok": False, "error": "NOT_FOUND", "message": "댓글을 찾을 수 없습니다."})
+                lst = [c for c in lst if c["id"] != cid]
+                self.comments[pid] = lst
+                self.deleted_comments.append(cid)
+                return send({"ok": True, "photoId": pid, "deleted": cid, "comments": lst, "commentCount": len(lst)})
             return send({"ok": False, "error": "BAD_REQUEST"})
 
         action = q.get("action", "ping")
@@ -153,9 +187,20 @@ class Mock:
             for p in self.photos:
                 if p["album"]:
                     albums[p["album"]] = albums.get(p["album"], 0) + 1
-            return send({"ok": True, "name": "진홍 포토 갤러리", "photos": self.photos,
+            photos = [dict(p, commentCount=len(self.comments.get(p["id"], []))) for p in self.photos]
+            return send({"ok": True, "name": "진홍 포토 갤러리", "photos": photos,
                          "albums": [{"name": k, "count": v} for k, v in sorted(albums.items())],
                          "total": len(self.photos), "locked": self.locked})
+        if action == "comments":
+            if self.old_script:
+                return send({"ok": False, "error": "BAD_REQUEST", "message": "알 수 없는 요청입니다: comments"})
+            if self.locked and q.get("token") != "tok.abc":
+                return send({"ok": False, "error": "LOCKED"})
+            pid = q.get("id")
+            if not any(p["id"] == pid for p in self.photos):
+                return send({"ok": False, "error": "NOT_FOUND"})
+            lst = self.comments.get(pid, [])
+            return send({"ok": True, "photoId": pid, "comments": lst, "commentCount": len(lst)})
         if action == "img":
             Mock.img_calls += 1
             if self.locked and q.get("token") != "tok.abc":
@@ -196,6 +241,10 @@ def album_counts(photos):
     return out
 
 
+def box_of(page, sel):
+    return page.eval_on_selector(sel, "e => { const r = e.getBoundingClientRect(); return {x: r.x, y: r.y, w: r.width, h: r.height}; }")
+
+
 def new_page(browser, mock, mobile=False, url_param=True, store_url=None):
     ctx = browser.new_context(
         viewport={"width": 390, "height": 844} if mobile else {"width": 1280, "height": 900},
@@ -208,7 +257,7 @@ def new_page(browser, mock, mobile=False, url_param=True, store_url=None):
     page.on("pageerror", lambda e: page_errors.append(str(e)))
     page.on("requestfailed", lambda r: failed.append(r.url + " :: " + str(r.failure)))
     page.route(re.compile(r"^https://script\.google\.com/macros/s/.*"), mock.handle)
-    page.goto("about:blank")
+    page.goto(BASE + "/manifest.json")
     if store_url:
         page.evaluate("(u) => localStorage.setItem('hg_sync_url', u)", store_url)
     page.goto(BASE + "/index.html" + ("?url=" + urllib.parse.quote(FAKE_URL) if url_param else ""))
@@ -225,7 +274,7 @@ def main():
             print("[1] 데스크톱 — 연결·그리드·라이트박스")
             photos = make_photos()
             mock = Mock(photos, album_counts(photos))
-            ctx, page, errors, page_errors, failed = new_page(browser, mock, url_param=False)
+            ctx, page, errors, page_errors, failed = new_page(browser, mock, url_param=False, store_url="none")
 
             page.wait_for_selector("#state:not([hidden])")
             check("연결 전 안내", "연결" in page.inner_text("#stateTitle"), page.inner_text("#stateTitle"))
@@ -436,6 +485,161 @@ def main():
             last_ready = page.eval_on_selector_all("#gallery .card:last-child img.ready", "e => e.length")
             check("마지막 카드도 그림", last_ready == 1, last_ready)
             check("120장 콘솔 오류 0", len(errors) == 0, errors[:3])
+            ctx.close()
+
+            # ── 7. 사진 댓글 — 데스크톱(1280) ──
+            print("[7] 사진 댓글 — 데스크톱")
+            photos7 = make_photos()
+            mock7 = Mock(photos7, album_counts(photos7))
+            mock7.comments["P1"] = [
+                {"id": "S1", "author": "보은", "text": "가족여행 사진 정말 좋네요",
+                 "createdAt": "2026-11-23T10:00:00", "dateLabel": "2026.11.23 10:00"},
+                {"id": "S2", "author": "연수", "text": "다음에 또 가자!",
+                 "createdAt": "2026-11-23T11:00:00", "dateLabel": "2026.11.23 11:00"},
+            ]
+            ctx, page, errors, page_errors, failed = new_page(browser, mock7)
+            page.wait_for_function("() => document.querySelectorAll('#gallery .card').length === 12")
+            page.wait_for_timeout(500)
+            check("카드에 댓글 배지 💬 2",
+                  page.eval_on_selector("#gallery .card:nth-child(1) .cm-badge", "e => e.textContent.trim()") == "💬 2",
+                  page.eval_on_selector_all("#gallery .card .cm-badge", "els => els.map(e => e.textContent.trim())"))
+            check("댓글 없는 카드엔 배지 없음",
+                  page.eval_on_selector_all("#gallery .card .cm-badge", "els => els.length") == 1)
+            page.mouse.move(4, 4)
+            page.wait_for_timeout(200)
+            page.screenshot(path=os.path.join(SHOTS, "photo-app-desktop-comments-grid.png"))
+
+            page.click("#gallery .card:nth-child(1)")
+            page.wait_for_selector("#lb.show")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 2")
+            check("댓글 목록 불러옴", page.inner_text("#cmCountNum") == "2", page.inner_text("#cmCountNum"))
+            first_cm = page.eval_on_selector("#cmList .cm-item:first-child",
+                                            "e => ({name: e.querySelector('b').textContent, text: e.querySelector('p').textContent})")
+            check("댓글 작성자·내용·순서", first_cm["name"] == "보은" and first_cm["text"] == "가족여행 사진 정말 좋네요", first_cm)
+            b_stage, b_side = box_of(page, "#lbStage"), box_of(page, "#lbSide")
+            check("데스크톱은 오른쪽 댓글 패널", b_side["x"] >= b_stage["x"] + b_stage["w"] - 2, (b_stage, b_side))
+            check("관리자 아니면 🗑 숨김",
+                  page.eval_on_selector("#cmList .cm-item:first-child .cm-del", "e => getComputedStyle(e).display === 'none'"))
+            page.wait_for_timeout(500)
+            page.screenshot(path=os.path.join(SHOTS, "photo-app-desktop-comments.png"))
+
+            page.fill("#cmName", "진홍")
+            page.fill("#cmText", "잘 보고 갑니다")
+            check("글자 수 표시", page.inner_text("#cmCount") == "8/300", page.inner_text("#cmCount"))
+            page.click("#cmSend")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 3")
+            check("댓글 즉시 반영", page.inner_text("#cmList .cm-item:last-child p") == "잘 보고 갑니다",
+                  page.inner_text("#cmList .cm-item:last-child p"))
+            check("댓글 수 갱신", page.inner_text("#cmCountNum") == "3", page.inner_text("#cmCountNum"))
+            check("카드 배지 갱신(💬 3)",
+                  page.eval_on_selector("#gallery .card:nth-child(1) .cm-badge", "e => e.textContent.trim()") == "💬 3",
+                  page.eval_on_selector("#gallery .card:nth-child(1) .cm-badge", "e => e.textContent"))
+            check("작성 요청 내용",
+                  mock7.comments_added and mock7.comments_added[-1].get("author") == "진홍"
+                  and mock7.comments_added[-1].get("photoId") == "P1", mock7.comments_added[-1:])
+            check("입력창 비워짐", page.input_value("#cmText") == "")
+            check("이름 기억(localStorage)", page.evaluate("() => localStorage.getItem('hg_cm_name')") == "진홍")
+
+            before = len(mock7.comments_added)
+            page.fill("#cmText", "   ")
+            page.click("#cmSend")
+            page.wait_for_timeout(350)
+            check("빈 댓글은 요청하지 않음", len(mock7.comments_added) == before, len(mock7.comments_added))
+            check("빈 댓글 안내", "댓글 내용을 입력" in page.inner_text("#toast"), page.inner_text("#toast"))
+
+            page.fill("#cmName", "<script>x</script>")
+            page.fill("#cmText", "<img src=x onerror=window.__xss=1>")
+            page.click("#cmSend")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 4")
+            xss = page.eval_on_selector("#cmList .cm-item:last-child",
+                                        "e => ({name: e.querySelector('b').textContent, text: e.querySelector('p').textContent, nodes: e.querySelectorAll('img,script,b img').length})")
+            check("XSS 이름 평문 렌더", xss["name"] == "<script>x</script>", xss)
+            check("XSS 내용 평문 렌더", xss["text"] == "<img src=x onerror=window.__xss=1>", xss)
+            check("XSS가 요소로 실행되지 않음", xss["nodes"] == 0 and page.evaluate("() => window.__xss === undefined"), xss)
+
+            page.click("#lbNext")
+            page.wait_for_function("() => { const e = document.querySelector('#cmList .cm-empty'); return !!e && e.textContent.indexOf('댓글이 없어요') >= 0; }")
+            check("다른 사진은 빈 댓글", "아직 댓글이 없어요" in page.inner_text("#cmList"), page.inner_text("#cmList"))
+            page.click("#lbPrev")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 4")
+            check("돌아오면 원래 사진 댓글", page.inner_text("#lbCount").startswith("1 /"), page.inner_text("#lbCount"))
+
+            page.click("#cmText")
+            page.keyboard.press("ArrowRight")
+            page.wait_for_timeout(250)
+            check("댓글 입력 중 화살표는 사진 안 넘김", page.inner_text("#lbCount").startswith("1 /"), page.inner_text("#lbCount"))
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+
+            page.click("#btnAdmin")
+            page.wait_for_selector("#ovPin.show")
+            page.fill("#pinInput", "2580")
+            page.click("#pinOk")
+            page.wait_for_selector("#fab.show")
+            page.click("#gallery .card:nth-child(1)")
+            page.wait_for_selector("#lb.show")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 4")
+            check("관리자면 🗑 보임",
+                  page.eval_on_selector("#cmList .cm-item:first-child .cm-del", "e => getComputedStyle(e).display !== 'none'"))
+            page.on("dialog", lambda dlg: dlg.accept())
+            page.click("#cmList .cm-item:first-child .cm-del")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 3")
+            check("관리자 PIN 으로 댓글 삭제", mock7.deleted_comments == ["S1"], mock7.deleted_comments)
+            check("삭제된 댓글 사라짐", "보은" not in page.inner_text("#cmList"), page.inner_text("#cmList")[:120])
+            check("삭제 후 카드 배지 3",
+                  page.eval_on_selector("#gallery .card:nth-child(1) .cm-badge", "e => e.textContent.trim()") == "💬 3")
+            page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, "photo-app-desktop-comments-admin.png"))
+            check("댓글 콘솔 오류 0", len(errors) == 0, errors)
+            check("댓글 페이지 오류 0", len(page_errors) == 0, page_errors)
+            ctx.close()
+
+            # ── 8. 사진 댓글 — 모바일(390) ──
+            print("[8] 사진 댓글 — 모바일")
+            photos8 = make_photos(6)
+            mock8 = Mock(photos8, album_counts(photos8))
+            mock8.comments["P1"] = [{"id": "M1", "author": "보은", "text": "모바일에서도 잘 보이네요",
+                                     "createdAt": "2026-11-23T10:00:00", "dateLabel": "2026.11.23 10:00"}]
+            ctx, page, errors, page_errors, failed = new_page(browser, mock8, mobile=True)
+            page.wait_for_function("() => document.querySelectorAll('#gallery .card').length === 6")
+            page.wait_for_timeout(400)
+            page.click("#gallery .card:nth-child(1)")
+            page.wait_for_selector("#lb.show")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 1")
+            m_stage, m_side = box_of(page, "#lbStage"), box_of(page, "#lbSide")
+            check("모바일은 사진 아래 댓글 패널", m_side["y"] >= m_stage["y"] + m_stage["h"] - 2, (m_stage, m_side))
+            check("모바일 댓글 패널 화면 안", m_side["h"] > 90 and m_side["y"] + m_side["h"] <= 846, m_side)
+            check("모바일 댓글 내용", "모바일에서도 잘 보이네요" in page.inner_text("#cmList"))
+            page.fill("#cmText", "휴대폰에서 남긴 댓글 😊")
+            page.click("#cmSend")
+            page.wait_for_function("() => document.querySelectorAll('#cmList .cm-item').length === 2")
+            check("모바일 댓글 등록", page.inner_text("#cmCountNum") == "2", page.inner_text("#cmCountNum"))
+            check("이모지 그대로 표시", "휴대폰에서 남긴 댓글 😊" in page.inner_text("#cmList"), page.inner_text("#cmList"))
+            check("모바일 카드 배지 갱신",
+                  page.eval_on_selector("#gallery .card:nth-child(1) .cm-badge", "e => e.textContent.trim()") == "💬 2",
+                  page.eval_on_selector("#gallery .card:nth-child(1) .cm-badge", "e => e.textContent"))
+            page.wait_for_timeout(400)
+            page.screenshot(path=os.path.join(SHOTS, "photo-app-mobile-comments.png"))
+            check("모바일 댓글 콘솔 오류 0", len(errors) == 0, errors)
+            check("모바일 댓글 페이지 오류 0", len(page_errors) == 0, page_errors)
+            ctx.close()
+
+            # ── 9. 구형 스크립트(댓글 미지원) ──
+            print("[9] 구형 스크립트 — 댓글 안내")
+            photos9 = make_photos(6)
+            mock9 = Mock(photos9, album_counts(photos9), old_script=True)
+            ctx, page, errors, page_errors, failed = new_page(browser, mock9, mobile=True)
+            page.wait_for_function("() => document.querySelectorAll('#gallery .card').length === 6")
+            check("구형 스크립트엔 배지 없음", page.eval_on_selector_all("#gallery .card .cm-badge", "els => els.length") == 0)
+            page.click("#gallery .card:nth-child(1)")
+            page.wait_for_selector("#lb.show")
+            page.wait_for_function("() => document.getElementById('cmNote').classList.contains('show')")
+            check("구형 스크립트 안내 문구", "새 스크립트 배포 후" in page.inner_text("#cmNote"), page.inner_text("#cmNote"))
+            check("구형 스크립트에선 등록 잠김", page.eval_on_selector("#cmSend", "e => e.disabled"))
+            check("사진은 정상 표시", page.eval_on_selector("#lbImg", "e => e.classList.contains('ready')"))
+            check("구형 스크립트 콘솔 오류 0", len(errors) == 0, errors)
+            page.wait_for_timeout(200)
+            page.screenshot(path=os.path.join(SHOTS, "photo-app-mobile-comments-old-script.png"))
             ctx.close()
 
             browser.close()

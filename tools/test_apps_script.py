@@ -45,6 +45,10 @@ HARNESS = r"""
     const self = this;
     return iter(Object.values(store.folders).filter(f => f.parent === self));
   };
+  Folder.prototype.getFilesByName = function (name) {
+    const self = this;
+    return iter(Object.values(store.files).filter(f => f.parent === self && f.name === name && !f.trashed));
+  };
   Folder.prototype.createFolder = function (name) {
     const f = new Folder('NEWF_' + (++store.seq), name, this);
     store.folders[f.id] = f;
@@ -52,7 +56,8 @@ HARNESS = r"""
   };
   Folder.prototype.createFile = function (blob) {
     const id = 'NEW_' + (++store.seq);
-    return addFile(id, blob.getName(), blob.getContentType(), this, '2026-11-24T09:00:00Z', blob.getBytes().length, blob.getBytes());
+    const text = blob.getDataAsString ? blob.getDataAsString() : null;
+    return addFile(id, blob.getName(), blob.getContentType(), this, '2026-11-24T09:00:00Z', blob.getBytes().length, blob.getBytes(), text);
   };
 
   function File(o) { Object.assign(this, o); }
@@ -65,12 +70,24 @@ HARNESS = r"""
   File.prototype.getParents = function () { return iter([this.parent]); };
   File.prototype.getBlob = function () {
     const self = this;
-    return { getBytes: () => self.bytes.slice(), getContentType: () => self.mime, getName: () => self.name };
+    return {
+      getBytes: () => self.bytes.slice(),
+      getContentType: () => self.mime,
+      getName: () => self.name,
+      getDataAsString: () => (self.text != null ? self.text : String.fromCharCode.apply(null, self.bytes || []))
+    };
+  };
+  File.prototype.setContent = function (text) {
+    this.text = String(text);
+    this.bytes = Array.from(this.text).map(c => c.charCodeAt(0) & 255);
+    this.size = this.bytes.length;
+    this.updated = '2026-11-24T12:00:00Z';
+    return this;
   };
   File.prototype.setTrashed = function (v) { this.trashed = !!v; };
 
-  function addFile(id, name, mime, parent, updated, size, bytes) {
-    const f = new File({ id, name, mime, parent, updated, size, bytes: bytes || mkBytes(40, 3), trashed: false });
+  function addFile(id, name, mime, parent, updated, size, bytes, text) {
+    const f = new File({ id, name, mime, parent, updated, size, bytes: bytes || mkBytes(40, 3), trashed: false, text: text == null ? null : text });
     store.files[id] = f;
     return f;
   }
@@ -113,8 +130,14 @@ HARNESS = r"""
     base64Encode(b) { return b64(Array.from(b)); },
     base64EncodeWebSafe(b) { return b64(Array.from(b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
     base64Decode(s) { return unb64(s); },
-    newBlob(bytes, mime, name) {
-      return { getBytes: () => Array.from(bytes), getContentType: () => mime, getName: () => name };
+    newBlob(content, mime, name) {
+      const isStr = typeof content === 'string';
+      return {
+        getBytes: () => (isStr ? Array.from(content).map(c => c.charCodeAt(0) & 255) : Array.from(content)),
+        getDataAsString: () => (isStr ? content : String.fromCharCode.apply(null, Array.from(content))),
+        getContentType: () => mime,
+        getName: () => name
+      };
     },
     getUuid() { return 'uuid-' + (++store.seq); },
     computeHmacSha256Signature(text, secret) {
@@ -156,12 +179,13 @@ HARNESS = r"""
       return { getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } };
     }
   };
+  const MimeType = { PLAIN_TEXT: 'text/plain', JSON: 'application/json' };
   const LockService = { getScriptLock() { return { waitLock() { }, releaseLock() { } }; } };
 
   const api = new Function(
-    'DriveApp', 'ContentService', 'Utilities', 'UrlFetchApp', 'ScriptApp', 'CacheService', 'PropertiesService', 'LockService',
+    'DriveApp', 'ContentService', 'Utilities', 'UrlFetchApp', 'ScriptApp', 'CacheService', 'PropertiesService', 'LockService', 'MimeType',
     code + '\nreturn {doGet: doGet, doPost: doPost};'
-  )(DriveApp, ContentService, Utilities, UrlFetchApp, ScriptApp, CacheService, PropertiesService, LockService);
+  )(DriveApp, ContentService, Utilities, UrlFetchApp, ScriptApp, CacheService, PropertiesService, LockService, MimeType);
 
   const call = (fn, ev) => { const out = api[fn](ev); return { mime: out.getMimeType(), body: JSON.parse(out.getContent()) }; };
   const GET = (p) => call('doGet', { parameter: p || {} }).body;
@@ -204,6 +228,39 @@ HARNESS = r"""
     R.list3 = GET({ action: 'list' });
     R.badJson = call('doPost', { postData: { contents: '{oops' } }).body;
 
+    /* ── 댓글 ── */
+    R.cmList0 = GET({ action: 'comments', id: 'F1' });
+    R.cmAdd1 = POST({ action: 'addComment', photoId: 'F1', author: '진홍', text: '첫 댓글입니다' });
+    R.cmAdd2 = POST({ action: 'addComment', photoId: 'F1', author: '아내', text: '두 번째\n줄바꿈도 됩니다' });
+    R.cmAddEmpty = POST({ action: 'addComment', photoId: 'F1', author: '진홍', text: '   \n  ' });
+    R.cmAddNoName = POST({ action: 'addComment', photoId: 'F1', author: '   ', text: '이름 없이' });
+    const longName = '가'.repeat(21);
+    R.cmAddLongName = POST({ action: 'addComment', photoId: 'F1', author: longName, text: '이름 길이 제한' });
+    R.cmAddLongText = POST({ action: 'addComment', photoId: 'F1', author: '진홍', text: '가'.repeat(301) });
+    R.cmAdd300 = POST({ action: 'addComment', photoId: 'F1', author: '나'.repeat(20), text: '다'.repeat(300) });
+    R.cmAddXss = POST({ action: 'addComment', photoId: 'F3', author: '<script>x</script>', text: '<img src=x onerror=alert(1)>' });
+    R.cmAddOutside = POST({ action: 'addComment', photoId: 'F6', author: '몰래', text: '밖' });
+    R.cmAddPdf = POST({ action: 'addComment', photoId: 'F5', author: '몰래', text: 'pdf' });
+    R.cmAddMissing = POST({ action: 'addComment', photoId: 'NOPE', author: '몰래', text: '없음' });
+    R.cmAddNoPhoto = POST({ action: 'addComment', author: '몰래', text: '사진 없음' });
+    R.listCm = GET({ action: 'list' });
+    R.cmList1 = GET({ action: 'comments', id: 'F1' });
+    R.cmGetOutside = GET({ action: 'comments', id: 'F6' });
+    R.cmGetMissing = GET({ action: 'comments', id: 'NOPE' });
+    R.cmDelNoPin = POST({ action: 'deleteComment', photoId: 'F1', commentId: (R.cmAdd1.comment || {}).id, pin: '1111' });
+    R.cmDelMissing = POST({ action: 'deleteComment', photoId: 'F1', commentId: 'nope', pin: '2580' });
+    R.cmDelNoId = POST({ action: 'deleteComment', photoId: 'F1', pin: '2580' });
+    R.cmDel = POST({ action: 'deleteComment', photoId: 'F1', commentId: (R.cmAdd1.comment || {}).id, pin: '2580' });
+    R.cmList2 = GET({ action: 'comments', id: 'F1' });
+    R.listCm2 = GET({ action: 'list' });
+
+    const cmFile = Object.values(store.files).filter(f => f.name === '.jinphoto_comments.json')[0] || null;
+    out.cmFileName = cmFile ? cmFile.name : null;
+    out.cmRaw = cmFile ? String(cmFile.text || '') : '';
+    out.cmInRoot = !!(cmFile && cmFile.parent && cmFile.parent.id === FID);
+    out.cmMime = cmFile ? cmFile.mime : null;
+    out.cmInList = Object.values(store.files).some(f => f.parent === root && /^\./.test(f.name) && R.listCm2.photos.some(p => p.name === f.name));
+
     out.trashedF2 = !!store.files.F2.trashed;
     out.newFileParent = (Object.values(store.folders).filter(f => f.name === '새앨범')[0] || {}).name || null;
     return out;
@@ -221,6 +278,10 @@ HARNESS = r"""
     R.imgNoToken = GET({ action: 'img', id: 'F1', size: 'thumb' });
     R.tampered = GET({ action: 'list', token: tok.replace(/^\d+/, '1' + Date.now()) });
     R.postLogin = POST({ action: 'login', pin: '2580' });
+    R.cmNoToken = POST({ action: 'addComment', photoId: 'F1', author: 'a', text: 'b' });
+    R.cmWithToken = POST({ action: 'addComment', photoId: 'F1', author: 'a', text: 'b', token: tok });
+    R.cmListToken = GET({ action: 'comments', id: 'F1', token: tok });
+    R.cmListNoToken = GET({ action: 'comments', id: 'F1' });
     return out;
   }
   return out;
@@ -315,6 +376,75 @@ def main():
               {"total": l3.get("total"), "trashed": out["trashedF2"]})
         check("깨진 JSON", R["badJson"].get("error") == "BAD_REQUEST", R["badJson"])
 
+        print("[1-b] 사진 댓글")
+        check("list 사진마다 commentCount 0",
+              all(p.get("commentCount") == 0 for p in lst["photos"]), [p.get("commentCount") for p in lst["photos"]])
+        c0 = R["cmList0"]
+        check("댓글 없을 때 빈 목록", c0.get("ok") is True and c0.get("commentCount") == 0 and c0.get("comments") == [], c0)
+
+        a1 = R["cmAdd1"]
+        check("댓글 작성 성공", a1.get("ok") is True and a1.get("commentCount") == 1, a1)
+        cm1 = a1.get("comment") or {}
+        check("댓글 항목(이름·내용·날짜)",
+              cm1.get("author") == "진홍" and cm1.get("text") == "첫 댓글입니다"
+              and len(cm1.get("dateLabel", "")) >= 10 and "T" in cm1.get("createdAt", "") and str(cm1.get("id", "")).startswith("c"),
+              cm1)
+        a2 = R["cmAdd2"]
+        check("댓글 줄바꿈 보존", a2.get("ok") is True and (a2.get("comment") or {}).get("text") == "두 번째\n줄바꿈도 됩니다", a2)
+        check("빈 댓글 거부", R["cmAddEmpty"].get("error") == "BAD_REQUEST", R["cmAddEmpty"])
+        check("이름 비우면 '익명'", (R["cmAddNoName"].get("comment") or {}).get("author") == "익명", R["cmAddNoName"])
+        check("이름 21자 거부", R["cmAddLongName"].get("error") == "TOO_LONG", R["cmAddLongName"])
+        check("내용 301자 거부", R["cmAddLongText"].get("error") == "TOO_LONG", R["cmAddLongText"])
+        check("이름 20자·내용 300자 허용",
+              R["cmAdd300"].get("ok") is True and len((R["cmAdd300"].get("comment") or {}).get("author", "")) == 20
+              and len((R["cmAdd300"].get("comment") or {}).get("text", "")) == 300, R["cmAdd300"])
+        xss = R["cmAddXss"]
+        xc = xss.get("comment") or {}
+        check("XSS 문자를 그대로(평문) 저장",
+              xss.get("ok") is True and xc.get("text") == "<img src=x onerror=alert(1)>"
+              and xc.get("author") == "<script>x</script>", xss)
+        check("갤러리 밖 사진 댓글 거부", R["cmAddOutside"].get("error") == "FORBIDDEN", R["cmAddOutside"])
+        check("이미지 아닌 파일 댓글 거부", R["cmAddPdf"].get("error") == "NOT_IMAGE", R["cmAddPdf"])
+        check("없는 사진 댓글 거부", R["cmAddMissing"].get("error") == "NOT_FOUND", R["cmAddMissing"])
+        check("사진 id 없이 댓글 거부", R["cmAddNoPhoto"].get("error") == "BAD_REQUEST", R["cmAddNoPhoto"])
+
+        lc = R["listCm"]
+        cmap = {p["id"]: p.get("commentCount") for p in lc["photos"]}
+        check("list 댓글 수 반영(F1=4, F3=1)", cmap.get("F1") == 4 and cmap.get("F3") == 1, cmap)
+        check("list 댓글 없는 사진은 0", cmap.get("F4") == 0 and cmap.get("F7") == 0, cmap)
+        check("list 전체 댓글 수", lc.get("commentTotal") == 5, lc.get("commentTotal"))
+        check("list 사진 수 그대로(댓글 파일 노출 없음)", lc.get("total") == 6 and out["cmInList"] is False,
+              {"total": lc.get("total"), "inList": out["cmInList"]})
+
+        c1 = R["cmList1"]
+        ids = [c["id"] for c in c1.get("comments", [])]
+        check("댓글 조회 4개·시간순", len(ids) == 4 and ids[0] == (R["cmAdd1"].get("comment") or {}).get("id"), ids)
+        check("댓글 조회 갤러리 밖 사진 거부", R["cmGetOutside"].get("error") == "FORBIDDEN", R["cmGetOutside"])
+        check("댓글 조회 없는 사진", R["cmGetMissing"].get("error") == "NOT_FOUND", R["cmGetMissing"])
+
+        check("댓글 삭제 PIN 틀림", R["cmDelNoPin"].get("error") == "BAD_PIN", R["cmDelNoPin"])
+        check("댓글 삭제 없는 댓글", R["cmDelMissing"].get("error") == "NOT_FOUND", R["cmDelMissing"])
+        check("댓글 삭제 id 없음", R["cmDelNoId"].get("error") == "BAD_REQUEST", R["cmDelNoId"])
+        dl = R["cmDel"]
+        check("관리자 PIN 으로 댓글 삭제",
+              dl.get("ok") is True and dl.get("commentCount") == 3
+              and (R["cmAdd1"].get("comment") or {}).get("id") not in [c["id"] for c in dl.get("comments", [])], dl)
+        check("삭제 후 목록·수 갱신",
+              R["cmList2"].get("commentCount") == 3
+              and {p["id"]: p.get("commentCount") for p in R["listCm2"]["photos"]}.get("F1") == 3,
+              {"get": R["cmList2"].get("commentCount"), "list": R["listCm2"].get("commentTotal")})
+
+        raw = out.get("cmRaw") or ""
+        try:
+            saved = json.loads(raw)
+        except Exception:
+            saved = {}
+        check("댓글 파일이 갤러리 폴더 안 \".jinphoto_comments.json\"",
+              out.get("cmFileName") == ".jinphoto_comments.json" and out.get("cmInRoot") is True, out.get("cmFileName"))
+        check("댓글 파일은 평문 텍스트·JSON 구조",
+              out.get("cmMime") == "text/plain" and isinstance(saved.get("comments"), dict)
+              and len(saved.get("comments", {}).get("F1", [])) == 3, {"mime": out.get("cmMime"), "keys": list(saved)[:4]})
+
         print("[2] 열람 비밀번호 (VIEW_PIN='2580')")
         out2 = page.evaluate(HARNESS, {"code": load_code("lock"), "mode": "lock"})
         L = out2["R"]
@@ -329,6 +459,10 @@ def main():
         check("토큰 없이 img 거부", L["imgNoToken"].get("error") == "LOCKED", L["imgNoToken"])
         check("변조 토큰 거부", L["tampered"].get("error") == "LOCKED", L["tampered"])
         check("POST 로그인 성공", L["postLogin"].get("ok") is True, L["postLogin"])
+        check("잠금 시 댓글 쓰기 토큰 필요", L["cmNoToken"].get("error") == "LOCKED", L["cmNoToken"])
+        check("토큰 있으면 댓글 쓰기", L["cmWithToken"].get("ok") is True, L["cmWithToken"])
+        check("토큰으로 댓글 읽기", L["cmListToken"].get("ok") is True and L["cmListToken"].get("commentCount") == 1, L["cmListToken"])
+        check("토큰 없이 댓글 읽기 거부", L["cmListNoToken"].get("error") == "LOCKED", L["cmListNoToken"])
 
         browser.close()
 

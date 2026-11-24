@@ -140,7 +140,7 @@ select{
   opacity:0; transition:opacity .2s;
 }
 .card:hover::after, .card:focus-visible::after{opacity:1}
-.card .meta{position:absolute; left:0; right:0; bottom:0; padding:10px 12px; color:#fdfbf7; z-index:2; transform:translateY(6px); opacity:0; transition:.2s; pointer-events:none}
+.card .meta{position:absolute; left:0; right:0; bottom:0; padding:10px 54px 10px 12px; color:#fdfbf7; z-index:2; transform:translateY(6px); opacity:0; transition:.2s; pointer-events:none}
 .card:hover .meta, .card:focus-visible .meta{opacity:1; transform:none}
 .card .meta b{display:block; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 4px rgba(0,0,0,.4)}
 .card .meta span{font-size:11px; opacity:.82}
@@ -161,6 +161,14 @@ select{
 @media (hover:none){
   .card::after{opacity:1}
   .card .meta{opacity:1; transform:none}
+}
+
+/* 댓글 수 배지 */
+.card .cm-badge{
+  position:absolute; right:8px; bottom:8px; z-index:3;
+  background:rgba(16,14,11,.62); color:#fdfbf7; border-radius:999px; padding:3px 8px;
+  font-size:11px; font-weight:700; letter-spacing:.2px; line-height:1.35;
+  box-shadow:0 2px 8px rgba(0,0,0,.22);
 }
 
 /* 빈/오류 상태 */
@@ -288,6 +296,49 @@ details.help code{background:#fff; border:1px solid var(--line); border-radius:5
   .lb-btn.txt span.t{display:none}
 }
 
+/* ───────── 라이트박스 · 사진 댓글 ───────── */
+.lb-body{flex:1; display:flex; flex-direction:column; min-height:0}
+.lb-left{flex:1; display:flex; flex-direction:column; min-height:0}
+.lb-side{
+  display:flex; flex-direction:column; min-height:0; flex:0 0 auto;
+  background:#121110; border-top:1px solid #2b2723; max-height:45vh;
+}
+.lb-side-head{display:flex; align-items:center; gap:6px; padding:11px 16px 7px; font-size:13px; font-weight:700; color:#e9e1d5}
+.lb-side-head b{color:#f0bd85; font-size:13px}
+.lb-side-head .sp{flex:1}
+.lb-side-head .cm-hint{font-size:11px; font-weight:600; color:#9a9186}
+.cm-list{flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:2px 16px 6px}
+.cm-item{display:flex; gap:8px; align-items:flex-start; padding:10px 0; border-top:1px solid #262220}
+.cm-item:first-child{border-top:0; padding-top:2px}
+.cm-main{flex:1; min-width:0}
+.cm-main b{font-size:12.5px; font-weight:700; color:#f2c79b; margin-right:6px}
+.cm-main time{font-size:11px; color:#8b8177}
+.cm-main p{margin:3px 0 0; font-size:13.5px; line-height:1.55; color:#e9e3d9; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word}
+.cm-del{border:0; flex:0 0 auto; width:30px; height:30px; border-radius:9px; background:rgba(255,255,255,.08); color:#eab7a6; font-size:13px; cursor:pointer; display:none; place-items:center}
+.lb-side.admin .cm-del{display:grid}
+.cm-del:hover{background:rgba(169,68,45,.35)}
+.cm-empty{padding:24px 6px; text-align:center; color:#8b8177; font-size:12.5px; line-height:1.7; white-space:pre-line}
+.cm-note{margin:6px 16px 0; border-radius:10px; padding:9px 11px; font-size:11.8px; line-height:1.55; display:none}
+.cm-note.show{display:block}
+.cm-note.warn{background:rgba(192,112,63,.15); border:1px solid rgba(192,112,63,.36); color:#f0c6a0}
+.cm-note.bad{background:rgba(169,68,45,.16); border:1px solid rgba(169,68,45,.4); color:#f3bdac}
+.cm-form{display:flex; flex-direction:column; gap:7px; padding:9px 14px calc(11px + env(safe-area-inset-bottom)); border-top:1px solid #2b2723; background:#151312}
+.cm-name,.cm-text{width:100%; background:#1d1b18; border:1px solid #332e29; border-radius:10px; color:#f2ece2; font-family:inherit; font-size:13px; padding:8px 10px}
+.cm-name{font-size:12.5px}
+.cm-text{min-height:36px; max-height:104px; resize:none; line-height:1.45; font-size:13.5px}
+.cm-name::placeholder,.cm-text::placeholder{color:#6f675e}
+.cm-name:focus,.cm-text:focus{outline:none; border-color:#4f7a6b}
+.cm-text:disabled,.cm-name:disabled{opacity:.5}
+.cm-row{display:flex; align-items:center; gap:8px}
+.cm-count{font-size:11px; color:#7d756b; margin-right:auto}
+.cm-send{border:0; border-radius:10px; background:var(--accent2); color:#fff; padding:8px 18px; font-size:13px; font-weight:700; cursor:pointer}
+.cm-send:hover{background:#367063}
+.cm-send[disabled]{opacity:.45; cursor:default}
+@media (min-width:900px){
+  .lb-body{flex-direction:row; align-items:stretch}
+  .lb-side{flex:0 0 368px; width:368px; max-height:none; border-top:0; border-left:1px solid #2b2723}
+}
+
 /* 토스트 */
 .toast{
   position:fixed; left:50%; bottom:calc(26px + env(safe-area-inset-bottom)); transform:translate(-50%,16px);
@@ -381,15 +432,36 @@ details.help code{background:#fff; border:1px solid var(--line); border-radius:5
     <button class="lb-btn" id="lbDelete" title="삭제" hidden><span aria-hidden="true">🗑</span></button>
     <button class="lb-btn" id="lbClose" title="닫기 (Esc)" aria-label="닫기">✕</button>
   </div>
-  <div class="lb-stage" id="lbStage">
-    <button class="lb-nav prev" id="lbPrev" aria-label="이전 사진">‹</button>
-    <img id="lbImg" alt="">
-    <div class="lb-spin" id="lbSpin"></div>
-    <button class="lb-nav next" id="lbNext" aria-label="다음 사진">›</button>
-  </div>
-  <div class="lb-bottom">
-    <div class="lb-cap"><b id="lbName">—</b><span id="lbMeta">—</span></div>
-    <div class="lb-acts"><span class="lb-btn txt" id="lbAlbum" style="cursor:default;background:rgba(255,255,255,.06)" hidden></span></div>
+  <div class="lb-body">
+    <div class="lb-left">
+      <div class="lb-stage" id="lbStage">
+        <button class="lb-nav prev" id="lbPrev" aria-label="이전 사진">‹</button>
+        <img id="lbImg" alt="">
+        <div class="lb-spin" id="lbSpin"></div>
+        <button class="lb-nav next" id="lbNext" aria-label="다음 사진">›</button>
+      </div>
+      <div class="lb-bottom">
+        <div class="lb-cap"><b id="lbName">—</b><span id="lbMeta">—</span></div>
+        <div class="lb-acts"><span class="lb-btn txt" id="lbAlbum" style="cursor:default;background:rgba(255,255,255,.06)" hidden></span></div>
+      </div>
+    </div>
+    <aside class="lb-side" id="lbSide" aria-label="사진 댓글">
+      <div class="lb-side-head">
+        <span aria-hidden="true">💬</span><span>댓글</span><b id="cmCountNum">0</b>
+        <span class="sp"></span>
+        <span class="cm-hint" id="cmAdminHint" hidden>관리자 · 🗑 로 삭제</span>
+      </div>
+      <div class="cm-list" id="cmList" role="log" aria-live="polite"></div>
+      <div class="cm-note" id="cmNote"></div>
+      <form class="cm-form" id="cmForm" autocomplete="off">
+        <input type="text" id="cmName" class="cm-name" maxlength="20" placeholder="이름 (비우면 익명)" aria-label="이름">
+        <textarea id="cmText" class="cm-text" rows="1" maxlength="300" placeholder="댓글을 남겨 보세요" aria-label="댓글 내용"></textarea>
+        <div class="cm-row">
+          <span class="cm-count" id="cmCount">0/300</span>
+          <button type="submit" class="cm-send" id="cmSend">등록</button>
+        </div>
+      </form>
+    </aside>
   </div>
 </div>
 
@@ -490,7 +562,7 @@ var DEFAULT_TITLE = "진홍's 포토 갤러리";
 var DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbxRiP6qGF9KsF-3BhtPpfVIN30clSdaWYEIS_WSLpULe15J-nSrFuuv5Z5iR4hhDcpi/exec';
 
 var LS = {
-  url: 'hg_sync_url', title: 'hg_title', sort: 'hg_sort'
+  url: 'hg_sync_url', title: 'hg_title', sort: 'hg_sort', cmName: 'hg_cm_name'
 };
 var SS = { token: 'hg_view_token', admin: 'hg_admin' };
 
@@ -697,6 +769,7 @@ function cardHtml(p) {
     '<span class="shim"></span>' +
     '<img alt="' + esc(alt) + '" decoding="async">' +
     (p.album ? '<span class="alb">' + esc(p.album) + '</span>' : '') +
+    (p.commentCount ? '<span class="cm-badge">💬 ' + (Number(p.commentCount) || 0) + '</span>' : '') +
     '<span class="meta"><b>' + esc(p.name) + '</b><span>' + esc(p.dateLabel || '') + '</span></span>' +
     '</button>';
 }
@@ -802,7 +875,7 @@ function normalize(p) {
   return {
     id: String(p.id), name: String(p.name || '사진'), album: String(p.album || ''),
     date: String(p.date || ''), dateLabel: String(p.dateLabel || (p.date || '').substring(0, 10).replace(/-/g, '.')),
-    mimeType: p.mimeType || '', size: p.size || 0
+    mimeType: p.mimeType || '', size: p.size || 0, commentCount: Number(p.commentCount) || 0
   };
 }
 function friendlyError(e) {
@@ -848,6 +921,10 @@ function paintAdmin() {
   b.querySelector('span[aria-hidden]').textContent = S.admin ? '🔓' : '🔒';
   $('fab').classList.toggle('show', !!(S.admin && S.url));
   $('lbDelete').hidden = !S.admin;
+  var side = $('lbSide');
+  if (side) side.classList.toggle('admin', !!S.admin);
+  var hint = $('cmAdminHint');
+  if (hint) hint.hidden = !S.admin;
 }
 function paintConnect() {
   var b = $('btnConnect');
@@ -858,6 +935,7 @@ function paintConnect() {
 
 /* ───────── 라이트박스 ───────── */
 var LB = { list: [], i: 0, open: false, seq: 0, fullCacheKeys: [] };
+var CM = { pid: '', list: [], seq: 0, supported: true, busy: false };
 function openLb(i) {
   LB.list = filtered();
   LB.i = i;
@@ -868,6 +946,7 @@ function openLb(i) {
 }
 function closeLb() {
   LB.open = false;
+  CM.seq++;
   $('lb').classList.remove('show');
   document.body.style.overflow = '';
   $('lbImg').removeAttribute('src');
@@ -920,6 +999,8 @@ function drawLb() {
     else if (e && e.code === 'LOCKED') { showLock(); }
     else { toast(friendlyError(e)); }
   });
+
+  loadComments(p.id);
 }
 function lbGo(d) {
   if (LB.list.length < 2) return;
@@ -969,6 +1050,156 @@ function deleteCurrent() {
     if (e && e.code === 'BAD_PIN') { toast('관리자 PIN이 만료됐어요. 다시 잠금 해제해 주세요.'); setAdmin(false); }
     else toast(friendlyError(e));
   }).then(function () { btn.disabled = false; });
+}
+
+/* ───────── 사진 댓글 ───────── */
+function cmNote(kind, text) {
+  var n = $('cmNote');
+  n.className = 'cm-note' + (kind ? ' show ' + kind : '');
+  n.textContent = text || '';
+}
+function cmSetForm(on) {
+  CM.supported = !!on;
+  $('cmSend').disabled = !on;
+  $('cmText').disabled = !on;
+  $('cmText').placeholder = on ? '댓글을 남겨 보세요' : '새 스크립트 배포 후 댓글을 쓸 수 있어요';
+}
+function cmEmpty(text) {
+  var box = $('cmList');
+  box.textContent = '';
+  var e = document.createElement('div');
+  e.className = 'cm-empty';
+  e.textContent = text;
+  box.appendChild(e);
+}
+function cmUnsupported() {
+  CM.list = [];
+  cmSetForm(false);
+  cmEmpty('이 갤러리의 스크립트가 아직 댓글을 지원하지 않아요.');
+  $('cmCountNum').textContent = '—';
+  cmNote('warn', '새 스크립트 배포 후 댓글을 쓸 수 있어요. (script.google.com 에서 photo-apps-script.txt 새 판을 배포하면 됩니다)');
+}
+function photoById(id) {
+  for (var i = 0; i < S.photos.length; i++) if (S.photos[i].id === id) return S.photos[i];
+  return null;
+}
+function loadComments(photoId) {
+  CM.pid = String(photoId || '');
+  CM.list = [];
+  var p = photoById(CM.pid);
+  $('cmCountNum').textContent = String((p && p.commentCount) || 0);
+  if (!CM.pid || !S.url) { cmEmpty('댓글을 불러올 수 없어요.'); return; }
+  if (!CM.supported) { cmUnsupported(); return; }
+  var seq = ++CM.seq;
+  cmNote('', '');
+  cmEmpty('댓글을 불러오는 중…');
+  apiGet('comments', { id: CM.pid }).then(function (d) {
+    if (seq !== CM.seq || !LB.open) return;
+    cmSetForm(true);
+    cmNote('', '');
+    CM.list = d.comments || [];
+    renderComments();
+    syncBadge(CM.pid, d.commentCount);
+  }).catch(function (e) {
+    if (seq !== CM.seq) return;
+    if (e && e.code === 'BAD_REQUEST') { cmUnsupported(); return; }
+    cmEmpty('댓글을 불러오지 못했어요.');
+    cmNote('bad', friendlyError(e));
+  });
+}
+function renderComments() {
+  var box = $('cmList');
+  box.textContent = '';
+  $('cmCountNum').textContent = String(CM.list.length);
+  if (!CM.list.length) { cmEmpty('아직 댓글이 없어요.\n첫 댓글을 남겨 보세요.'); return; }
+  CM.list.forEach(function (c) {
+    var row = document.createElement('div');
+    row.className = 'cm-item';
+    row.setAttribute('data-cid', String(c.id || ''));
+    var main = document.createElement('div');
+    main.className = 'cm-main';
+    var head = document.createElement('div');
+    var b = document.createElement('b');
+    b.textContent = c.author || '익명';
+    var t = document.createElement('time');
+    t.textContent = c.dateLabel || '';
+    head.appendChild(b);
+    head.appendChild(t);
+    var p = document.createElement('p');
+    p.textContent = c.text || '';
+    main.appendChild(head);
+    main.appendChild(p);
+    row.appendChild(main);
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'cm-del';
+    del.title = '댓글 삭제';
+    del.setAttribute('aria-label', '댓글 삭제');
+    del.textContent = '🗑';
+    del.addEventListener('click', function () { removeComment(c); });
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+function syncBadge(photoId, count) {
+  var n = Math.max(0, Number(count) || 0);
+  var p = photoById(photoId);
+  if (p) p.commentCount = n;
+  Array.prototype.forEach.call(document.querySelectorAll('#gallery .card'), function (card) {
+    if (card.getAttribute('data-id') !== photoId) return;
+    var b = card.querySelector('.cm-badge');
+    if (!n) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('span'); b.className = 'cm-badge'; card.appendChild(b); }
+    b.textContent = '💬 ' + n;
+  });
+}
+function updateCmCount() {
+  var v = $('cmText').value || '';
+  $('cmCount').textContent = v.length + '/300';
+}
+function submitComment(ev) {
+  if (ev) ev.preventDefault();
+  if (!CM.supported) { toast('새 스크립트 배포 후 댓글을 쓸 수 있어요'); return; }
+  var text = ($('cmText').value || '').trim();
+  var name = ($('cmName').value || '').trim();
+  if (!text) { toast('댓글 내용을 입력해 주세요'); $('cmText').focus(); return; }
+  if (!CM.pid || CM.busy) return;
+  var btn = $('cmSend');
+  CM.busy = true;
+  btn.disabled = true;
+  var body = { action: 'addComment', photoId: CM.pid, author: name, text: text };
+  if (S.token) body.token = S.token;
+  apiPost(body).then(function (d) {
+    store(LS.cmName, name);
+    CM.list = d.comments || CM.list;
+    $('cmText').value = '';
+    updateCmCount();
+    renderComments();
+    syncBadge(CM.pid, d.commentCount);
+    toast('댓글을 남겼어요');
+  }).catch(function (e) {
+    if (e && e.code === 'BAD_REQUEST') { cmUnsupported(); return; }
+    if (e && e.code === 'TOO_LONG') { toast(e.message || '글이 너무 길어요'); return; }
+    toast(friendlyError(e));
+  }).then(function () {
+    CM.busy = false;
+    btn.disabled = !CM.supported;
+  });
+}
+function removeComment(c) {
+  if (!S.admin) return;
+  if (!confirm('이 댓글을 지울까요?\n' + (c.author || '익명') + ': ' + (c.text || ''))) return;
+  apiPost({ action: 'deleteComment', photoId: CM.pid, commentId: c.id, pin: sessGet('hg_admin_pin') }).then(function (d) {
+    CM.list = d.comments || [];
+    renderComments();
+    syncBadge(CM.pid, d.commentCount);
+    toast('댓글을 지웠어요');
+  }).catch(function (e) {
+    if (e && e.code === 'BAD_PIN') { toast('관리자 PIN이 만료됐어요. 다시 잠금 해제해 주세요.'); setAdmin(false); }
+    else if (e && e.code === 'BAD_REQUEST') { cmUnsupported(); }
+    else toast(friendlyError(e));
+  });
 }
 
 /* ───────── 관리자 ───────── */
@@ -1192,7 +1423,7 @@ function saveConnect() {
 }
 function clearConnect() {
   if (!confirm('이 브라우저에서 드라이브 연결을 해제할까요?\n드라이브의 사진은 그대로 남습니다.')) return;
-  S.url = ''; store(LS.url, '');
+  S.url = ''; store(LS.url, 'none');   // 'none' = 연결 안 함(기본 주소로 되돌아가지 않게)
   S.photos = []; S.albums = []; S.loaded = false; S.album = '';
   thumbCache.clear(); fullCache.clear(); sessDel(SS.token);
   paintConnect(); applySub(); renderChips(); renderGrid();
@@ -1258,10 +1489,16 @@ function bind() {
   }, { passive: true });
   document.addEventListener('keydown', function (e) {
     if (!LB.open) return;
-    if (e.key === 'Escape') closeLb();
-    else if (e.key === 'ArrowRight') lbGo(1);
+    if (e.key === 'Escape') { closeLb(); return; }
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'ArrowRight') lbGo(1);
     else if (e.key === 'ArrowLeft') lbGo(-1);
   });
+
+  /* 댓글 */
+  $('cmForm').addEventListener('submit', submitComment);
+  $('cmText').addEventListener('input', updateCmCount);
 
   /* PIN */
   $('pinOk').addEventListener('click', submitPin);
@@ -1307,7 +1544,8 @@ function bind() {
 
 /* ───────── 시작 ───────── */
 function boot() {
-  S.url = storeGet(LS.url) || DEFAULT_SYNC_URL || '';
+  var stored = storeGet(LS.url);
+  S.url = stored === 'none' ? '' : (stored || DEFAULT_SYNC_URL || '');
   S.title = storeGet(LS.title) || DEFAULT_TITLE;
   S.sort = storeGet(LS.sort) || 'desc';
   S.token = sessGet(SS.token) || '';
@@ -1323,6 +1561,7 @@ function boot() {
 
   applyTitle();
   paintConnect();
+  $('cmName').value = storeGet(LS.cmName) || '';
   S.admin = sessGet(SS.admin) === '1' && !!sessGet('hg_admin_pin');
   paintAdmin();
   bind();
