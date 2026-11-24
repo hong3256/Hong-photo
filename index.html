@@ -489,7 +489,7 @@ details.help code{background:#fff; border:1px solid var(--line); border-radius:5
         <li>[배포] → [새 배포] → 웹 앱 · 실행: <b>나</b> · 액세스: <b>모든 사용자</b></li>
         <li>나온 <code>/exec</code> 주소를 위 칸에 붙여넣고 [저장]</li>
       </ol>
-      <div class="hint">사진을 더하거나 지우려면 관리자 PIN이 필요합니다. 드라이브 폴더에서 직접 올려도 됩니다.</div>
+      <div class="hint">사진을 더하거나 지우려면 관리자 PIN이 필요합니다. 드라이브 폴더에서 직접 올려도 됩니다. 댓글까지 쓰려면 스크립트를 최신 판(<code>photo-apps-script.txt</code>)으로 다시 배포해 주세요.</div>
     </details>
   </div>
 </div>
@@ -1077,7 +1077,7 @@ function cmUnsupported() {
   cmSetForm(false);
   cmEmpty('이 갤러리의 스크립트가 아직 댓글을 지원하지 않아요.');
   $('cmCountNum').textContent = '—';
-  cmNote('warn', '새 스크립트 배포 후 댓글을 쓸 수 있어요. (script.google.com 에서 photo-apps-script.txt 새 판을 배포하면 됩니다)');
+  cmNote('warn', '새 스크립트 배포 후 댓글을 쓸 수 있어요.');
 }
 function photoById(id) {
   for (var i = 0; i < S.photos.length; i++) if (S.photos[i].id === id) return S.photos[i];
